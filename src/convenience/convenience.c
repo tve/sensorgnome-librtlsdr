@@ -246,6 +246,7 @@ int verbose_device_search(char *s)
 	int i, device_count, device, offset;
 	char *s2;
 	char vendor[256], product[256], serial[256];
+
 	device_count = rtlsdr_get_device_count();
 	if (!device_count) {
 		fprintf(stderr, "No supported devices found.\n");
@@ -257,9 +258,16 @@ int verbose_device_search(char *s)
 		fprintf(stderr, "  %d:  %s, %s, SN: %s\n", i, vendor, product, serial);
 	}
 	fprintf(stderr, "\n");
-	/* does string look like raw id number */
-	device = (int)strtol(s, &s2, 0);
-	if (s2[0] == '\0' && device >= 0 && device < device_count) {
+        /* does string look like B:D where B, D are integers? */
+        s2 = strchr(s, ':');
+        if (s2) {
+                device = ((int)strtol(s, 0, 0)) << 16 | ((int)strtol(s2 + 1, 0, 0)) << 8;
+                s2 = s + strlen(s);
+        } else {
+                /* does string look like raw id number */
+                device = (int)strtol(s, &s2, 0);
+        }
+	if (s2[0] == '\0' && (device >= 0 && (device < device_count || device > 0xff))) {
 		fprintf(stderr, "Using device %d: %s\n",
 			device, rtlsdr_get_device_name((uint32_t)device));
 		return device;

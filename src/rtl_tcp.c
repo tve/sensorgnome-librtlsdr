@@ -440,7 +440,11 @@ int main(int argc, char **argv)
 
 	rtlsdr_open(&dev, (uint32_t)dev_index);
 	if (NULL == dev) {
-	fprintf(stderr, "Failed to open rtlsdr device #%d.\n", dev_index);
+                if (dev_index <= 0xff) {
+                        fprintf(stderr, "Failed to open rtlsdr device #%d.\n", dev_index);
+                } else {
+                        fprintf(stderr, "Failed to open rtlsdr device %d:%d.\n", dev_index >> 16, (dev_index >> 8) & 0xff);
+                }
 		exit(1);
 	}
 

@@ -769,7 +769,7 @@ int rtlsdr_get_xtal_freq(rtlsdr_dev_t *dev, uint32_t *rtl_freq, uint32_t *tuner_
 	if (!dev)
 		return -1;
 
-	#define APPLY_PPM_CORR(val,ppm) (((val) * (1.0 + (ppm) / 1e6)))
+#define APPLY_PPM_CORR(val,ppm) (((val) * (1.0 + (ppm) / 1e6)))
 
 	if (rtl_freq)
 		*rtl_freq = (uint32_t) APPLY_PPM_CORR(dev->rtl_xtal, dev->corr);
@@ -781,7 +781,7 @@ int rtlsdr_get_xtal_freq(rtlsdr_dev_t *dev, uint32_t *rtl_freq, uint32_t *tuner_
 }
 
 int rtlsdr_get_usb_strings(rtlsdr_dev_t *dev, char *manufact, char *product,
-			    char *serial)
+                           char *serial)
 {
 	struct libusb_device_descriptor dd;
 	libusb_device *device = NULL;
@@ -963,13 +963,13 @@ int rtlsdr_get_tuner_gains(rtlsdr_dev_t *dev, int *gains)
 				  240, 290, 340, 420 };
 	const int fc0012_gains[] = { -99, -40, 71, 179, 192 };
 	const int fc0013_gains[] = { -99, -73, -65, -63, -60, -58, -54, 58, 61,
-				       63, 65, 67, 68, 70, 71, 179, 181, 182,
-				       184, 186, 188, 191, 197 };
+                                     63, 65, 67, 68, 70, 71, 179, 181, 182,
+                                     184, 186, 188, 191, 197 };
 	const int fc2580_gains[] = { 0 /* no gain values */ };
 	const int r82xx_gains[] = { 0, 9, 14, 27, 37, 77, 87, 125, 144, 157,
-				     166, 197, 207, 229, 254, 280, 297, 328,
-				     338, 364, 372, 386, 402, 421, 434, 439,
-				     445, 480, 496 };
+                                    166, 197, 207, 229, 254, 280, 297, 328,
+                                    338, 364, 372, 386, 402, 421, 434, 439,
+                                    445, 480, 496 };
 	const int unknown_gains[] = { 0 /* no gain values */ };
 
 	const int *ptr = NULL;
@@ -1101,7 +1101,7 @@ int rtlsdr_set_sample_rate(rtlsdr_dev_t *dev, uint32_t samp_rate)
 
 	/* check if the rate is supported by the resampler */
 	if ((samp_rate <= 225000) || (samp_rate > 3200000) ||
-	   ((samp_rate > 300000) && (samp_rate <= 900000))) {
+            ((samp_rate > 300000) && (samp_rate <= 900000))) {
 		fprintf(stderr, "Invalid sample rate: %u Hz\n", samp_rate);
 		return -EINVAL;
 	}
@@ -1335,6 +1335,12 @@ const char *rtlsdr_get_device_name(uint32_t index)
 	rtlsdr_dongle_t *device = NULL;
 	uint32_t device_count = 0;
 	ssize_t cnt;
+        uint8_t bus_num = 0;
+        uint8_t dev_num = 0;
+        if (index > 0xff) {
+                bus_num = index >> 16;
+                dev_num = (index >> 8) & 0xff;
+        }
 
 	r = libusb_init(&ctx);
 	if(r < 0)
@@ -1348,10 +1354,15 @@ const char *rtlsdr_get_device_name(uint32_t index)
 		device = find_known_device(dd.idVendor, dd.idProduct);
 
 		if (device) {
-			device_count++;
-
-			if (index == device_count - 1)
-				break;
+                        if (bus_num > 0) {
+                                if (libusb_get_bus_number(list[i]) == bus_num && libusb_get_device_address(list[i]) == dev_num) {
+                                        break;
+                                }
+                        } else {
+                                device_count++;
+                                if (index == device_count - 1)
+                                        break;
+                        }
 		}
 	}
 
@@ -1365,8 +1376,7 @@ const char *rtlsdr_get_device_name(uint32_t index)
 		return "";
 }
 
-int rtlsdr_get_device_usb_strings(uint32_t index, char *manufact,
-				   char *product, char *serial)
+int rtlsdr_get_device_usb_strings(uint32_t index, char *manufact, char *product, char *serial)
 {
 	int r = -2;
 	int i;
@@ -1377,6 +1387,12 @@ int rtlsdr_get_device_usb_strings(uint32_t index, char *manufact,
 	rtlsdr_dev_t devt;
 	uint32_t device_count = 0;
 	ssize_t cnt;
+        uint8_t bus_num = 0;
+        uint8_t dev_num = 0;
+        if (index > 0xff) {
+                bus_num = index >> 16;
+                dev_num = (index >> 8) & 0xff;
+        }
 
 	r = libusb_init(&ctx);
 	if(r < 0)
@@ -1390,18 +1406,21 @@ int rtlsdr_get_device_usb_strings(uint32_t index, char *manufact,
 		device = find_known_device(dd.idVendor, dd.idProduct);
 
 		if (device) {
-			device_count++;
-
-			if (index == device_count - 1) {
-				r = libusb_open(list[i], &devt.devh);
-				if (!r) {
-					r = rtlsdr_get_usb_strings(&devt,
-								   manufact,
-								   product,
-								   serial);
-					libusb_close(devt.devh);
-				}
-				break;
+                        if ((bus_num > 0 &&
+                            (libusb_get_bus_number(list[i]) == bus_num
+                             && libusb_get_device_address(list[i]) == dev_num))
+                            || index == device_count++) {
+                                r = libusb_open(list[i], &devt.devh);
+                                if (!r) {
+                                        *serial = '\0';
+                                        r = rtlsdr_get_usb_strings(&devt,
+                                                                   manufact,
+                                                                   product,
+                                                                   serial);
+                                        sprintf(serial + strlen(serial), " usb %d:%d", libusb_get_bus_number(list[i]), libusb_get_device_address(list[i]));
+                                        libusb_close(devt.devh);
+                                }
+                                break;
 			}
 		}
 	}
@@ -1446,6 +1465,12 @@ int rtlsdr_open(rtlsdr_dev_t **out_dev, uint32_t index)
 	struct libusb_device_descriptor dd;
 	uint8_t reg;
 	ssize_t cnt;
+        uint8_t bus_num = 0;
+        uint8_t dev_num = 0;
+        if (index > 0xff) {
+                bus_num = index >> 16;
+                dev_num = (index >> 8) & 0xff;
+        }
 
 	dev = malloc(sizeof(rtlsdr_dev_t));
 	if (NULL == dev)
@@ -1470,12 +1495,16 @@ int rtlsdr_open(rtlsdr_dev_t **out_dev, uint32_t index)
 		libusb_get_device_descriptor(list[i], &dd);
 
 		if (find_known_device(dd.idVendor, dd.idProduct)) {
-			device_count++;
-		}
-
-		if (index == device_count - 1)
-			break;
-
+                        if (bus_num > 0) {
+                                if (libusb_get_bus_number(device) == bus_num && libusb_get_device_address(device) == dev_num) {
+                                        break;
+                                }
+                        } else {
+                                device_count++;
+                                if (index == device_count - 1)
+                                        break;
+                        }
+                }
 		device = NULL;
 	}
 
@@ -1490,7 +1519,7 @@ int rtlsdr_open(rtlsdr_dev_t **out_dev, uint32_t index)
 		fprintf(stderr, "usb_open error %d\n", r);
 		if(r == LIBUSB_ERROR_ACCESS)
 			fprintf(stderr, "Please fix the device permissions, e.g. "
-			"by installing the udev rules file rtl-sdr.rules\n");
+                                "by installing the udev rules file rtl-sdr.rules\n");
 		goto err;
 	}
 
@@ -1508,11 +1537,11 @@ int rtlsdr_open(rtlsdr_dev_t **out_dev, uint32_t index)
 		}
 #else
 		fprintf(stderr, "\nKernel driver is active, or device is "
-				"claimed by second instance of librtlsdr."
-				"\nIn the first case, please either detach"
-				" or blacklist the kernel module\n"
-				"(dvb_usb_rtl28xxu), or enable automatic"
-				" detaching at compile time.\n\n");
+                        "claimed by second instance of librtlsdr."
+                        "\nIn the first case, please either detach"
+                        " or blacklist the kernel module\n"
+                        "(dvb_usb_rtl28xxu), or enable automatic"
+                        " detaching at compile time.\n\n");
 #endif
 	}
 
@@ -1586,7 +1615,7 @@ int rtlsdr_open(rtlsdr_dev_t **out_dev, uint32_t index)
 		goto found;
 	}
 
-found:
+ found:
 	/* use the rtl clock value by default */
 	dev->tun_xtal = dev->rtl_xtal;
 	dev->tuner = &tuners[dev->tuner_type];
@@ -1624,7 +1653,7 @@ found:
 	*out_dev = dev;
 
 	return 0;
-err:
+ err:
 	if (dev) {
 		if (dev->ctx)
 			libusb_exit(dev->ctx);
@@ -1742,7 +1771,7 @@ static int _rtlsdr_alloc_async_buffers(rtlsdr_dev_t *dev)
 
 	if (!dev->xfer_buf) {
 		dev->xfer_buf = malloc(dev->xfer_buf_num *
-					   sizeof(unsigned char *));
+                                       sizeof(unsigned char *));
 
 		for(i = 0; i < dev->xfer_buf_num; ++i)
 			dev->xfer_buf[i] = malloc(dev->xfer_buf_len);
@@ -1783,7 +1812,7 @@ static int _rtlsdr_free_async_buffers(rtlsdr_dev_t *dev)
 }
 
 int rtlsdr_read_async(rtlsdr_dev_t *dev, rtlsdr_read_async_cb_t cb, void *ctx,
-			  uint32_t buf_num, uint32_t buf_len)
+                      uint32_t buf_num, uint32_t buf_len)
 {
 	unsigned int i;
 	int r = 0;
@@ -1854,7 +1883,7 @@ int rtlsdr_read_async(rtlsdr_dev_t *dev, rtlsdr_read_async_cb_t cb, void *ctx,
 					continue;
 
 				if (LIBUSB_TRANSFER_CANCELLED !=
-						dev->xfer[i]->status) {
+                                    dev->xfer[i]->status) {
 					r = libusb_cancel_transfer(dev->xfer[i]);
 					/* handle events after canceling
 					 * to allow transfer status to

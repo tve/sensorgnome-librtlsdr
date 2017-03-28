@@ -136,7 +136,9 @@ int verbose_reset_buffer(rtlsdr_dev_t *dev);
  *
  * \param s a string to be parsed
  * \return dev_index int, -1 on error
+ * S can have the form B:D, which is interpreted
+ * as a usb bus:device number pair.  In that case,
+ * the returned index is (B << 16) | (D << 8).
  */
 
 int verbose_device_search(char *s);
-
