@@ -32,6 +32,7 @@
 #include <sys/time.h>
 #include <netinet/in.h>
 #include <fcntl.h>
+#include <sys/un.h>
 #else
 #include <winsock2.h>
 #include "getopt/getopt.h"
@@ -52,6 +53,7 @@ typedef int socklen_t;
 #define SOCKADDR struct sockaddr
 #define SOCKET int
 #define SOCKET_ERROR -1
+#define UNIX_PATH_MAX 108
 #endif
 
 static SOCKET s;
@@ -88,7 +90,7 @@ void usage(void)
 {
 	printf("rtl_tcp, an I/Q spectrum server for RTL2832 based DVB-T receivers\n\n"
 		"Usage:\t[-a listen address]\n"
-		"\t[-p listen port (default: 1234)]\n"
+		"\t[-p listen port or unix domain socket path (default: 1234)]\n"
 		"\t[-f frequency to tune to [Hz]]\n"
 		"\t[-g gain (default: 0 for auto)]\n"
 		"\t[-s samplerate in Hz (default: 2048000 Hz)]\n"
@@ -389,6 +391,9 @@ int main(int argc, char **argv)
 	i = WSAStartup(MAKEWORD(2,2), &wsd);
 #else
 	struct sigaction sigact, sigign;
+        char sock_path[1 + UNIX_PATH_MAX];
+        char * sock_path_str = 0;
+        struct sockaddr_un local_u;
 #endif
 
 	while ((opt = getopt(argc, argv, "a:p:f:g:s:b:n:d:P:")) != -1) {
@@ -410,7 +415,17 @@ int main(int argc, char **argv)
 			addr = optarg;
 			break;
 		case 'p':
-			port = atoi(optarg);
+#ifndef _WIN32
+			port = (int)strtol(optarg, &sock_path_str, 0);
+                        if (*sock_path_str != '\0') {
+                                strncpy(sock_path, optarg, UNIX_PATH_MAX);
+                                sock_path_str = sock_path;
+                        } else {
+                                sock_path_str = 0;
+                        }
+#else
+                        port = atoi(optarg);
+#endif
 			break;
 		case 'b':
 			buf_num = atoi(optarg);
@@ -506,31 +521,63 @@ int main(int argc, char **argv)
 	pthread_cond_init(&cond, NULL);
 	pthread_cond_init(&exit_cond, NULL);
 
-	memset(&local,0,sizeof(local));
-	local.sin_family = AF_INET;
-	local.sin_port = htons(port);
-	local.sin_addr.s_addr = inet_addr(addr);
+#ifndef _WIN32
+        if (sock_path_str) {
+                listensocket = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
+                if (listensocket < 0) {
+                        fprintf(stderr, "Error opening unix domain socket.\n");
+                        exit(2);
+                }
+        } else {
+#endif
+                memset(&local,0,sizeof(local));
+                local.sin_family = AF_INET;
+                local.sin_port = htons(port);
+                local.sin_addr.s_addr = inet_addr(addr);
 
-	listensocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	r = 1;
-	setsockopt(listensocket, SOL_SOCKET, SO_REUSEADDR, (char *)&r, sizeof(int));
-	setsockopt(listensocket, SOL_SOCKET, SO_LINGER, (char *)&ling, sizeof(ling));
-	bind(listensocket,(struct sockaddr *)&local,sizeof(local));
-
-#ifdef _WIN32
-	ioctlsocket(listensocket, FIONBIO, &blockmode);
+                listensocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+#ifndef _WIN32
+        }
 #else
-	r = fcntl(listensocket, F_GETFL, 0);
-	r = fcntl(listensocket, F_SETFL, r | O_NONBLOCK);
+        r = 1;
+        setsockopt(listensocket, SOL_SOCKET, SO_REUSEADDR, (char *)&r, sizeof(int));
+        setsockopt(listensocket, SOL_SOCKET, SO_LINGER, (char *)&ling, sizeof(ling));
+#endif
+#ifndef _WIN32
+        if (sock_path_str) {
+                memset( (char *) &local_u, 0, sizeof(local_u));
+                local_u.sun_family = AF_UNIX;
+                strncpy(local_u.sun_path, sock_path_str, sizeof(local_u.sun_path) - 1);
+                if (bind(listensocket, (struct sockaddr *) &local_u, sizeof(local_u)) < 0) {
+                        fprintf(stderr, "Error binding to unix domain socket at %s\n", sock_path);
+                        exit(3);
+                }
+        } else {
+#endif
+                bind(listensocket,(struct sockaddr *)&local,sizeof(local));
+#ifdef _WIN32
+                ioctlsocket(listensocket, FIONBIO, &blockmode);
+#else
+                r = fcntl(listensocket, F_GETFL, 0);
+                r = fcntl(listensocket, F_SETFL, r | O_NONBLOCK);
+        }
 #endif
 
 	while(1) {
 		printf("listening...\n");
-		printf("Use the device argument 'rtl_tcp=%s:%d' in OsmoSDR "
-		       "(gr-osmosdr) source\n"
-		       "to receive samples in GRC and control "
-		       "rtl_tcp parameters (frequency, gain, ...).\n",
-		       addr, port);
+#ifndef _WIN32
+                if (sock_path_str) {
+                        printf("Listening on unix domain socket %s\n", sock_path_str);
+                } else {
+#endif
+                        printf("Use the device argument 'rtl_tcp=%s:%d' in OsmoSDR "
+                               "(gr-osmosdr) source\n"
+                               "to receive samples in GRC and control "
+                               "rtl_tcp parameters (frequency, gain, ...).\n",
+                               addr, port);
+#ifndef _WIN32
+                }
+#endif
 		listen(listensocket,1);
 
 		while(1) {
@@ -601,6 +648,9 @@ out:
 	closesocket(s);
 #ifdef _WIN32
 	WSACleanup();
+#else
+        if (sock_path_str)
+                unlink(sock_path_str);
 #endif
 	printf("bye!\n");
 	return r >= 0 ? r : -r;
