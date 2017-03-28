@@ -5,8 +5,12 @@ turns your Realtek RTL2832 based DVB dongle into a SDR receiver
 For more information see:
 http://sdr.osmocom.org/trac/wiki/rtl-sdr
 
-This version is intended for use with [sensorgnomes](https://sensorgnome.org) and [motus)[https://motus.org]
+This version is intended for use with sensorgnomes (https://sensorgnome.org)
+and the motus wildlife tracking system (https://motus.org)
 
-Planned Changes 
-- stable device selection via USB BUS:DEV selectors (stable against plugging / unplugging of other rtlsdr dongles)
+Planned Changes
+
+- stable device selection via USB BUS:DEV selectors
+  (stable against plugging / unplugging of other rtlsdr dongles)
+
 - option to use a unix domain socket with rtl_tcp
