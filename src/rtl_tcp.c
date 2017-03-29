@@ -57,6 +57,7 @@ typedef int socklen_t;
 #endif
 
 static SOCKET s[2];
+static int wait_for_start = 0;
 
 static pthread_t tcp_worker_thread;
 static pthread_t command_thread;
@@ -145,7 +146,7 @@ static void sighandler(int signum)
 
 void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
 {
-	if(!do_exit) {
+	if(!do_exit && ! wait_for_start) {
 		struct llist *rpt = (struct llist*)malloc(sizeof(struct llist));
 		rpt->data = (char*)malloc(len);
 		memcpy(rpt->data, buf, len);
@@ -207,7 +208,7 @@ static void *tcp_worker(void *arg)
 		ts.tv_sec  = tp.tv_sec+5;
 		ts.tv_nsec = tp.tv_usec * 1000;
 		r = pthread_cond_timedwait(&cond, &ll_mutex, &ts);
-		if(r == ETIMEDOUT) {
+		if(r == ETIMEDOUT && ! wait_for_start) {
 			pthread_mutex_unlock(&ll_mutex);
 			printf("worker cond timeout\n");
 			sighandler(0);
@@ -357,6 +358,10 @@ static void *command_worker(void *arg)
 			printf("set tuner gain by index %d\n", ntohl(cmd.param));
 			set_gain_by_index(dev, ntohl(cmd.param));
 			break;
+                case 0x0e:
+                        printf("start streaming i/q samples\n");
+                        wait_for_start = 0;
+                        break;
 		default:
 			printf("unknown command %d param %d\n", cmd.cmd, ntohl(cmd.param));
 			break;
@@ -616,8 +621,11 @@ int main(int argc, char **argv)
 			}
 		}
 
-		if (num_cons == 1)
+		if (num_cons == 1) {
 			s[1] = s[0];
+                } else {
+                        wait_for_start = 1;
+                }
 
 		printf("client accepted!\n");
 
