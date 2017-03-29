@@ -10,7 +10,7 @@
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.	 See the
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
@@ -56,7 +56,7 @@ typedef int socklen_t;
 #define UNIX_PATH_MAX 108
 #endif
 
-static SOCKET s;
+static SOCKET s[2];
 
 static pthread_t tcp_worker_thread;
 static pthread_t command_thread;
@@ -175,12 +175,12 @@ void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
 			}
 
 			cur->next = rpt;
-
+#if 0
 			if (num_queued > global_numq)
 				printf("ll+, now %d\n", num_queued);
 			else if (num_queued < global_numq)
 				printf("ll-, now %d\n", num_queued);
-
+#endif
 			global_numq = num_queued;
 		}
 		pthread_cond_signal(&cond);
@@ -224,19 +224,19 @@ static void *tcp_worker(void *arg)
 			bytessent = 0;
 			while(bytesleft > 0) {
 				FD_ZERO(&writefds);
-				FD_SET(s, &writefds);
+				FD_SET(s[1], &writefds);
 				tv.tv_sec = 1;
 				tv.tv_usec = 0;
-				r = select(s+1, NULL, &writefds, NULL, &tv);
+				r = select(s[1]+1, NULL, &writefds, NULL, &tv);
 				if(r) {
-					bytessent = send(s,  &curelem->data[index], bytesleft, 0);
+					bytessent = send(s[1],	&curelem->data[index], bytesleft, 0);
 					bytesleft -= bytessent;
 					index += bytessent;
 				}
 				if(bytessent == SOCKET_ERROR || do_exit) {
-						printf("worker socket bye\n");
-						sighandler(0);
-						pthread_exit(NULL);
+					printf("worker socket bye\n");
+					sighandler(0);
+					pthread_exit(NULL);
 				}
 			}
 			prev = curelem;
@@ -289,12 +289,12 @@ static void *command_worker(void *arg)
 		left=sizeof(cmd);
 		while(left >0) {
 			FD_ZERO(&readfds);
-			FD_SET(s, &readfds);
+			FD_SET(s[0], &readfds);
 			tv.tv_sec = 1;
 			tv.tv_usec = 0;
-			r = select(s+1, &readfds, NULL, NULL, &tv);
+			r = select(s[0]+1, &readfds, NULL, NULL, &tv);
 			if(r) {
-				received = recv(s, (char*)&cmd+(sizeof(cmd)-left), left, 0);
+				received = recv(s[0], (char*)&cmd+(sizeof(cmd)-left), left, 0);
 				left -= received;
 			}
 			if(received == SOCKET_ERROR || do_exit) {
@@ -358,6 +358,7 @@ static void *command_worker(void *arg)
 			set_gain_by_index(dev, ntohl(cmd.param));
 			break;
 		default:
+			printf("unknown command %d param %d\n", cmd.cmd, ntohl(cmd.param));
 			break;
 		}
 		cmd.cmd = 0xff;
@@ -391,10 +392,12 @@ int main(int argc, char **argv)
 	i = WSAStartup(MAKEWORD(2,2), &wsd);
 #else
 	struct sigaction sigact, sigign;
-        char sock_path[1 + UNIX_PATH_MAX];
-        char * sock_path_str = 0;
-        struct sockaddr_un local_u;
+	char sock_path[1 + UNIX_PATH_MAX];
+	struct sockaddr_un local_u;
+	char *tmp;
+	int use_unix_sock = 0;
 #endif
+	int num_cons;
 
 	while ((opt = getopt(argc, argv, "a:p:f:g:s:b:n:d:P:")) != -1) {
 		switch (opt) {
@@ -416,15 +419,13 @@ int main(int argc, char **argv)
 			break;
 		case 'p':
 #ifndef _WIN32
-			port = (int)strtol(optarg, &sock_path_str, 0);
-                        if (*sock_path_str != '\0') {
-                                strncpy(sock_path, optarg, UNIX_PATH_MAX);
-                                sock_path_str = sock_path;
-                        } else {
-                                sock_path_str = 0;
-                        }
+			port = (int)strtol(optarg, &tmp, 0);
+			if (*tmp != '\0') {
+				strncpy(sock_path, optarg, UNIX_PATH_MAX);
+				use_unix_sock = 1;
+			}
 #else
-                        port = atoi(optarg);
+			port = atoi(optarg);
 #endif
 			break;
 		case 'b':
@@ -450,16 +451,16 @@ int main(int argc, char **argv)
 	}
 
 	if (dev_index < 0) {
-	    exit(1);
+		exit(1);
 	}
 
 	rtlsdr_open(&dev, (uint32_t)dev_index);
 	if (NULL == dev) {
-                if (dev_index <= 0xff) {
-                        fprintf(stderr, "Failed to open rtlsdr device #%d.\n", dev_index);
-                } else {
-                        fprintf(stderr, "Failed to open rtlsdr device %d:%d.\n", dev_index >> 16, (dev_index >> 8) & 0xff);
-                }
+		if (dev_index <= 0xff) {
+			fprintf(stderr, "Failed to open rtlsdr device #%d.\n", dev_index);
+		} else {
+			fprintf(stderr, "Failed to open rtlsdr device %d:%d.\n", dev_index >> 16, (dev_index >> 8) & 0xff);
+		}
 		exit(1);
 	}
 
@@ -492,7 +493,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Tuned to %i Hz.\n", frequency);
 
 	if (0 == gain) {
-		 /* Enable automatic gain */
+		/* Enable automatic gain */
 		r = rtlsdr_set_tuner_gain_mode(dev, 0);
 		if (r < 0)
 			fprintf(stderr, "WARNING: Failed to enable automatic gain.\n");
@@ -522,64 +523,64 @@ int main(int argc, char **argv)
 	pthread_cond_init(&exit_cond, NULL);
 
 #ifndef _WIN32
-        if (sock_path_str) {
-                listensocket = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
-                if (listensocket < 0) {
-                        fprintf(stderr, "Error opening unix domain socket.\n");
-                        exit(2);
-                }
-        } else {
+	if (use_unix_sock) {
+		listensocket = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
+		if (listensocket < 0) {
+			fprintf(stderr, "Error opening unix domain socket.\n");
+			exit(2);
+		}
+	} else {
 #endif
-                memset(&local,0,sizeof(local));
-                local.sin_family = AF_INET;
-                local.sin_port = htons(port);
-                local.sin_addr.s_addr = inet_addr(addr);
+		memset(&local,0,sizeof(local));
+		local.sin_family = AF_INET;
+		local.sin_port = htons(port);
+		local.sin_addr.s_addr = inet_addr(addr);
 
-                listensocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		listensocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 #ifndef _WIN32
-        }
+	}
 #else
-        r = 1;
-        setsockopt(listensocket, SOL_SOCKET, SO_REUSEADDR, (char *)&r, sizeof(int));
-        setsockopt(listensocket, SOL_SOCKET, SO_LINGER, (char *)&ling, sizeof(ling));
+	r = 1;
+	setsockopt(listensocket, SOL_SOCKET, SO_REUSEADDR, (char *)&r, sizeof(int));
+	setsockopt(listensocket, SOL_SOCKET, SO_LINGER, (char *)&ling, sizeof(ling));
 #endif
 #ifndef _WIN32
-        if (sock_path_str) {
-                memset( (char *) &local_u, 0, sizeof(local_u));
-                local_u.sun_family = AF_UNIX;
-                strncpy(local_u.sun_path, sock_path_str, sizeof(local_u.sun_path) - 1);
-                if (bind(listensocket, (struct sockaddr *) &local_u, sizeof(local_u)) < 0) {
-                        fprintf(stderr, "Error binding to unix domain socket at %s\n", sock_path);
-                        exit(3);
-                }
-        } else {
+	if (use_unix_sock) {
+		memset( (char *) &local_u, 0, sizeof(local_u));
+		local_u.sun_family = AF_UNIX;
+		strncpy(local_u.sun_path, sock_path, sizeof(local_u.sun_path) - 1);
+		if (bind(listensocket, (struct sockaddr *) &local_u, sizeof(local_u)) < 0) {
+			fprintf(stderr, "Error binding to unix domain socket at %s\n", sock_path);
+			exit(3);
+		}
+	} else {
 #endif
-                bind(listensocket,(struct sockaddr *)&local,sizeof(local));
+		bind(listensocket,(struct sockaddr *)&local,sizeof(local));
 #ifdef _WIN32
-                ioctlsocket(listensocket, FIONBIO, &blockmode);
+		ioctlsocket(listensocket, FIONBIO, &blockmode);
 #else
-                r = fcntl(listensocket, F_GETFL, 0);
-                r = fcntl(listensocket, F_SETFL, r | O_NONBLOCK);
-        }
+		r = fcntl(listensocket, F_GETFL, 0);
+		r = fcntl(listensocket, F_SETFL, r | O_NONBLOCK);
+	}
 #endif
+
+#ifndef _WIN32
+	if (use_unix_sock) {
+		printf("Listening on unix domain socket %s\n", sock_path);
+	} else {
+#endif
+		printf("listening...\nUse the device argument 'rtl_tcp=%s:%d' in OsmoSDR "
+		       "(gr-osmosdr) source\n"
+		       "to receive samples in GRC and control "
+		       "rtl_tcp parameters (frequency, gain, ...).\n",
+		       addr, port);
+#ifndef _WIN32
+	}
+#endif
+	listen(listensocket,1);
 
 	while(1) {
-		printf("listening...\n");
-#ifndef _WIN32
-                if (sock_path_str) {
-                        printf("Listening on unix domain socket %s\n", sock_path_str);
-                } else {
-#endif
-                        printf("Use the device argument 'rtl_tcp=%s:%d' in OsmoSDR "
-                               "(gr-osmosdr) source\n"
-                               "to receive samples in GRC and control "
-                               "rtl_tcp parameters (frequency, gain, ...).\n",
-                               addr, port);
-#ifndef _WIN32
-                }
-#endif
-		listen(listensocket,1);
-
+		num_cons = 0;
 		while(1) {
 			FD_ZERO(&readfds);
 			FD_SET(listensocket, &readfds);
@@ -590,29 +591,36 @@ int main(int argc, char **argv)
 				goto out;
 			} else if(r) {
 				rlen = sizeof(remote);
-				s = accept(listensocket,(struct sockaddr *)&remote, &rlen);
-				break;
+				s[num_cons] = accept(listensocket,(struct sockaddr *)&remote, &rlen);
+				setsockopt(s[num_cons], SOL_SOCKET, SO_LINGER, (char *)&ling, sizeof(ling));
+				if (num_cons == 0) {
+					memset(&dongle_info, 0, sizeof(dongle_info));
+					memcpy(&dongle_info.magic, "RTL0", 4);
+					r = rtlsdr_get_tuner_type(dev);
+					if (r >= 0)
+						dongle_info.tuner_type = htonl(r);
+
+					r = rtlsdr_get_tuner_gains(dev, NULL);
+					if (r >= 0)
+						dongle_info.tuner_gain_count = htonl(r);
+
+					r = send(s[0], (const char *)&dongle_info, sizeof(dongle_info), 0);
+					if (sizeof(dongle_info) != r)
+						printf("failed to send dongle information\n");
+				}
+				++ num_cons;
+#ifndef _WIN32
+				if (! use_unix_sock || num_cons == 2)
+#endif
+					break;
 			}
 		}
 
-		setsockopt(s, SOL_SOCKET, SO_LINGER, (char *)&ling, sizeof(ling));
+		if (num_cons == 1)
+			s[1] = s[0];
 
 		printf("client accepted!\n");
 
-		memset(&dongle_info, 0, sizeof(dongle_info));
-		memcpy(&dongle_info.magic, "RTL0", 4);
-
-		r = rtlsdr_get_tuner_type(dev);
-		if (r >= 0)
-			dongle_info.tuner_type = htonl(r);
-
-		r = rtlsdr_get_tuner_gains(dev, NULL);
-		if (r >= 0)
-			dongle_info.tuner_gain_count = htonl(r);
-
-		r = send(s, (const char *)&dongle_info, sizeof(dongle_info), 0);
-		if (sizeof(dongle_info) != r)
-			printf("failed to send dongle information\n");
 
 		pthread_attr_init(&attr);
 		pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
@@ -625,7 +633,9 @@ int main(int argc, char **argv)
 		pthread_join(tcp_worker_thread, &status);
 		pthread_join(command_thread, &status);
 
-		closesocket(s);
+		closesocket(s[0]);
+		if (num_cons == 2)
+			closesocket(s[1]);
 
 		printf("all threads dead..\n");
 		curelem = ll_buffers;
@@ -642,15 +652,17 @@ int main(int argc, char **argv)
 		global_numq = 0;
 	}
 
-out:
+ out:
 	rtlsdr_close(dev);
 	closesocket(listensocket);
-	closesocket(s);
+	closesocket(s[0]);
+	if (num_cons ==2)
+		closesocket(s[1]);
 #ifdef _WIN32
 	WSACleanup();
 #else
-        if (sock_path_str)
-                unlink(sock_path_str);
+	if (use_unix_sock)
+		unlink(sock_path);
 #endif
 	printf("bye!\n");
 	return r >= 0 ? r : -r;
