@@ -581,9 +581,12 @@ int main(int argc, char **argv)
 	}
 #endif
 
+	listen(listensocket,1);
+
 #ifndef _WIN32
 	if (use_unix_sock) {
 		printf("Listening on unix domain socket %s\n", sock_path);
+                fflush(stdout);
 	} else {
 #endif
 		printf("listening...\nUse the device argument 'rtl_tcp=%s:%d' in OsmoSDR "
@@ -594,7 +597,6 @@ int main(int argc, char **argv)
 #ifndef _WIN32
 	}
 #endif
-	listen(listensocket,1);
 
 	while(1) {
 		num_cons = 0;
