@@ -360,8 +360,13 @@ static void *command_worker(void *arg)
 			set_gain_by_index(dev, ntohl(cmd.param));
 			break;
                 case 0x0e:
-                        printf("start streaming i/q samples\n");
-                        wait_for_start = 0;
+                        if (cmd.param) {
+                                printf("start streaming i/q samples\n");
+                                wait_for_start = 0;
+                        } else {
+                                printf("stop streaming i/q samples\n");
+                                wait_for_start = 1;
+                        }
                         break;
 		default:
 			printf("unknown command %d param %d\n", cmd.cmd, ntohl(cmd.param));
