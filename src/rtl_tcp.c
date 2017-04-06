@@ -98,6 +98,7 @@ void usage(void)
 		"\t[-b number of buffers (default: 15, set by library)]\n"
 		"\t[-n max number of linked list buffers to keep (default: 500)]\n"
 		"\t[-d device index (default: 0)]\n"
+                "\t[-t test mode: send RTL2832 internal counter, not real samples]\n"
 		"\t[-P ppm_error (default: 0)]\n");
 	exit(1);
 }
@@ -403,8 +404,9 @@ int main(int argc, char **argv)
 	int use_unix_sock = 0;
 #endif
 	int num_cons;
+        uint32_t test_mode = 0;
 
-	while ((opt = getopt(argc, argv, "a:p:f:g:s:b:n:d:P:")) != -1) {
+	while ((opt = getopt(argc, argv, "a:p:f:g:s:b:n:d:P:t")) != -1) {
 		switch (opt) {
 		case 'd':
 			dev_index = verbose_device_search(optarg);
@@ -442,6 +444,9 @@ int main(int argc, char **argv)
 		case 'P':
 			ppm_error = atoi(optarg);
 			break;
+                case 't':
+                        test_mode = 1;
+                        break;
 		default:
 			usage();
 			break;
@@ -515,6 +520,8 @@ int main(int argc, char **argv)
 		else
 			fprintf(stderr, "Tuner gain set to %f dB.\n", gain/10.0);
 	}
+
+        rtlsdr_set_testmode(dev, test_mode);
 
 	/* Reset endpoint before we start reading from it (mandatory) */
 	r = rtlsdr_reset_buffer(dev);

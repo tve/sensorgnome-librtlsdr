@@ -54,6 +54,7 @@ void usage(void)
 		"\t[-p ppm_error (default: 0)]\n"
 		"\t[-b output_block_size (default: 16 * 16384)]\n"
 		"\t[-n number of samples to read (default: 0, infinite)]\n"
+                "\t[-t test mode: send RTL2832 internal counter, not real samples]\n"
 		"\t[-S force sync output (default: async)]\n"
 		"\tfilename (a '-' dumps samples to stdout)\n\n");
 	exit(1);
@@ -120,8 +121,9 @@ int main(int argc, char **argv)
 	uint32_t frequency = 100000000;
 	uint32_t samp_rate = DEFAULT_SAMPLE_RATE;
 	uint32_t out_block_size = DEFAULT_BUF_LENGTH;
+        uint32_t test_mode = 0;
 
-	while ((opt = getopt(argc, argv, "d:f:g:s:b:n:p:S")) != -1) {
+	while ((opt = getopt(argc, argv, "d:f:g:s:b:n:p:St")) != -1) {
 		switch (opt) {
 		case 'd':
 			dev_index = verbose_device_search(optarg);
@@ -145,6 +147,9 @@ int main(int argc, char **argv)
 		case 'n':
 			bytes_to_read = (uint32_t)atof(optarg) * 2;
 			break;
+                case 't':
+                        test_mode = 1;
+                        break;
 		case 'S':
 			sync_mode = 1;
 			break;
@@ -213,6 +218,8 @@ int main(int argc, char **argv)
 	}
 
 	verbose_ppm_set(dev, ppm_error);
+
+        rtlsdr_set_testmode(dev, test_mode);
 
 	if(strcmp(filename, "-") == 0) { /* Write samples to stdout */
 		file = stdout;
