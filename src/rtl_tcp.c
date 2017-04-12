@@ -24,6 +24,7 @@
 #include <stdlib.h>
 
 #ifndef _WIN32
+#include <time.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
@@ -71,7 +72,19 @@ struct llist {
 	char *data;
 	size_t len;
 	struct llist *next;
+/* #ifndef _WIN32
+        struct timespec ts;
+ #endif
+*/
 };
+
+#ifndef _WIN32
+/* sample stream header, for embedding in output stream for clients */
+typedef struct {
+        uint32_t size;      // size of this header plus number of sample bytes before next header
+        double ts;          // double timestamp of first sample in stream
+} stream_segment_hdr_t;
+#endif
 
 typedef struct { /* structure size must be multiple of 2 bytes */
 	char magic[4];
@@ -80,6 +93,7 @@ typedef struct { /* structure size must be multiple of 2 bytes */
 } dongle_info_t;
 
 static rtlsdr_dev_t *dev = NULL;
+static uint32_t samp_rate = 2048000;
 
 static int global_numq = 0;
 static struct llist *ll_buffers = 0;
@@ -147,11 +161,31 @@ static void sighandler(int signum)
 
 void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
 {
+        struct timespec ts;
 	if(!do_exit && ! wait_for_start) {
+                char *dest;
 		struct llist *rpt = (struct llist*)malloc(sizeof(struct llist));
-		rpt->data = (char*)malloc(len);
-		memcpy(rpt->data, buf, len);
-		rpt->len = len;
+                uint32_t needlen;
+#ifndef _WIN32
+                stream_segment_hdr_t *hdr;
+                needlen = len + sizeof(stream_segment_hdr_t);
+#else
+                needlen = len;
+#endif
+		rpt->data = (char*)malloc(needlen);
+                dest = rpt->data;
+#ifndef _WIN32
+                /* fill in stream_segment_hdr_t and set dest to point after it  */
+                hdr = (stream_segment_hdr_t *) rpt->data;
+                clock_gettime(CLOCK_REALTIME, &ts);
+                /* set start-of-buffer timestamp to current clock minus (# frames) * rate */
+                hdr->ts = ts.tv_sec + ts.tv_nsec / 1.0e9 - (len / 2.0) / samp_rate;
+                hdr->size = len + sizeof(stream_segment_hdr_t);
+		dest += sizeof(stream_segment_hdr_t);
+#endif
+		memcpy(dest, buf, len);
+
+		rpt->len = needlen;
 		rpt->next = NULL;
 
 		pthread_mutex_lock(&ll_mutex);
@@ -195,8 +229,8 @@ static void *tcp_worker(void *arg)
 	struct llist *curelem,*prev;
 	int bytesleft,bytessent, index;
 	struct timeval tv= {1,0};
-	struct timespec ts;
 	struct timeval tp;
+	struct timespec ts;
 	fd_set writefds;
 	int r = 0;
 
@@ -313,6 +347,7 @@ static void *command_worker(void *arg)
 		case 0x02:
 			printf("set sample rate %d\n", ntohl(cmd.param));
 			rtlsdr_set_sample_rate(dev, ntohl(cmd.param));
+                        samp_rate = cmd.param;
 			break;
 		case 0x03:
 			printf("set gain mode %d\n", ntohl(cmd.param));
@@ -381,7 +416,7 @@ int main(int argc, char **argv)
 	int r, opt, i;
 	char* addr = "127.0.0.1";
 	int port = 1234;
-	uint32_t frequency = 100000000, samp_rate = 2048000;
+	uint32_t frequency = 100000000;
 	struct sockaddr_in local, remote;
 	uint32_t buf_num = 0;
 	int dev_index = 0;
