@@ -100,6 +100,7 @@ static struct llist *ll_buffers = 0;
 static int llbuf_num = 500;
 
 static volatile int do_exit = 0;
+static int usb_buffer_size = 0;
 
 void usage(void)
 {
@@ -110,6 +111,7 @@ void usage(void)
 		"\t[-g gain (default: 0 for auto)]\n"
 		"\t[-s samplerate in Hz (default: 2048000 Hz)]\n"
 		"\t[-b number of buffers (default: 15, set by library)]\n"
+		"\t[-B libusb buffer size, multiple of 512 (default: 16 * 32 * 512 bytes, set by library)]\n"
 		"\t[-n max number of linked list buffers to keep (default: 500)]\n"
 		"\t[-d device index (default: 0)]\n"
                 "\t[-t test mode: send RTL2832 internal counter, not real samples]\n"
@@ -446,7 +448,7 @@ int main(int argc, char **argv)
 	int num_cons;
         uint32_t test_mode = 0;
 
-	while ((opt = getopt(argc, argv, "a:p:f:g:s:b:n:d:P:t")) != -1) {
+	while ((opt = getopt(argc, argv, "a:p:f:g:s:b:B:n:d:P:t")) != -1) {
 		switch (opt) {
 		case 'd':
 			dev_index = verbose_device_search(optarg);
@@ -477,6 +479,9 @@ int main(int argc, char **argv)
 			break;
 		case 'b':
 			buf_num = atoi(optarg);
+			break;
+		case 'B':
+			usb_buffer_size = atoi(optarg);
 			break;
 		case 'n':
 			llbuf_num = atoi(optarg);
@@ -685,7 +690,7 @@ int main(int argc, char **argv)
 		r = pthread_create(&command_thread, &attr, command_worker, NULL);
 		pthread_attr_destroy(&attr);
 
-		r = rtlsdr_read_async(dev, rtlsdr_callback, NULL, buf_num, 0);
+		r = rtlsdr_read_async(dev, rtlsdr_callback, NULL, buf_num, usb_buffer_size);
 
 		pthread_join(tcp_worker_thread, &status);
 		pthread_join(command_thread, &status);
