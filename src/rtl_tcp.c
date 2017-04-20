@@ -710,7 +710,7 @@ int main(int argc, char **argv)
 			free(prev);
 		}
 
-		do_exit = 0;
+		do_exit = 1;
 		global_numq = 0;
 	}
 
