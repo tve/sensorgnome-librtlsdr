@@ -159,6 +159,7 @@ static void sighandler(int signum)
 	fprintf(stderr, "Signal %d caught, exiting!\n", signum);
         fflush(stderr);
 	do_exit = 1;
+	rtlsdr_cancel_async(dev);
 }
 #endif
 
@@ -250,6 +251,7 @@ static void *tcp_worker(void *arg)
 			pthread_mutex_unlock(&ll_mutex);
 			fprintf(stderr, "worker cond timeout\n");
                         fflush(stderr);
+			do_exit = 1;
 			pthread_exit(NULL);
 		}
 
@@ -267,7 +269,7 @@ static void *tcp_worker(void *arg)
 				tv.tv_sec = 1;
 				tv.tv_usec = 0;
 				r = select(s[1]+1, NULL, &writefds, NULL, &tv);
-				if(r) {
+				if(r > 0 && ! do_exit) {
 					bytessent = send(s[1],	&curelem->data[index], bytesleft, 0);
 					bytesleft -= bytessent;
 					index += bytessent;
@@ -275,6 +277,7 @@ static void *tcp_worker(void *arg)
 				if(r < 0 || bytessent == SOCKET_ERROR || do_exit) {
 					fprintf(stderr, "worker socket bye\n");
                                         fflush(stderr);
+					do_exit = 1;
 					pthread_exit(NULL);
 				}
 			}
@@ -332,13 +335,14 @@ static void *command_worker(void *arg)
 			tv.tv_sec = 1;
 			tv.tv_usec = 0;
 			r = select(s[0]+1, &readfds, NULL, NULL, &tv);
-			if(r) {
+			if(r > 0) {
 				received = recv(s[0], (char*)&cmd+(sizeof(cmd)-left), left, 0);
 				left -= received;
 			}
 			if(received == SOCKET_ERROR || do_exit) {
 				fprintf(stderr, "comm recv bye\n");
                                 fflush(stderr);
+				do_exit = 1;
 				pthread_exit(NULL);
 			}
 		}
@@ -447,6 +451,7 @@ int main(int argc, char **argv)
 	struct sockaddr_un local_u;
 	char *tmp;
 	int use_unix_sock = 0;
+
 #endif
 	int num_cons;
         uint32_t test_mode = 0;
@@ -536,6 +541,7 @@ int main(int argc, char **argv)
 	sigemptyset(&sigact.sa_mask);
 	sigact.sa_flags = 0;
 	sigign.sa_handler = SIG_IGN;
+	sigaction(SIGHUP, &sigact, NULL);
 	sigaction(SIGINT, &sigact, NULL);
 	sigaction(SIGTERM, &sigact, NULL);
 	sigaction(SIGQUIT, &sigact, NULL);
@@ -550,7 +556,6 @@ int main(int argc, char **argv)
 	/* Set the sample rate */
 	r = rtlsdr_set_sample_rate(dev, samp_rate);
 	if (r < 0) {
-	if (r < 0)
 		fprintf(stderr, "WARNING: Failed to set sample rate.\n");
                 fflush(stderr);
         }
@@ -675,7 +680,7 @@ int main(int argc, char **argv)
 			r = select(listensocket+1, &readfds, NULL, NULL, &tv);
 			if(do_exit) {
 				goto out;
-			} else if(r) {
+			} else if(r > 0) {
 				rlen = sizeof(remote);
 				s[num_cons] = accept(listensocket,(struct sockaddr *)&remote, &rlen);
 				setsockopt(s[num_cons], SOL_SOCKET, SO_LINGER, (char *)&ling, sizeof(ling));
