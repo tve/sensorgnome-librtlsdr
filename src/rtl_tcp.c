@@ -146,6 +146,7 @@ sighandler(int signum)
 {
 	if (CTRL_C_EVENT == signum) {
 		fprintf(stderr, "Signal caught, exiting!\n");
+		fflush(stderr);
 		do_exit = 1;
 		rtlsdr_cancel_async(dev);
 		return TRUE;
@@ -155,8 +156,8 @@ sighandler(int signum)
 #else
 static void sighandler(int signum)
 {
-	fprintf(stderr, "Signal caught, exiting!\n");
-	rtlsdr_cancel_async(dev);
+	fprintf(stderr, "Signal %d caught, exiting!\n", signum);
+        fflush(stderr);
 	do_exit = 1;
 }
 #endif
@@ -247,8 +248,8 @@ static void *tcp_worker(void *arg)
 		r = pthread_cond_timedwait(&cond, &ll_mutex, &ts);
 		if(r == ETIMEDOUT && ! wait_for_start) {
 			pthread_mutex_unlock(&ll_mutex);
-			printf("worker cond timeout\n");
-			sighandler(0);
+			fprintf(stderr, "worker cond timeout\n");
+                        fflush(stderr);
 			pthread_exit(NULL);
 		}
 
@@ -271,9 +272,9 @@ static void *tcp_worker(void *arg)
 					bytesleft -= bytessent;
 					index += bytessent;
 				}
-				if(bytessent == SOCKET_ERROR || do_exit) {
-					printf("worker socket bye\n");
-					sighandler(0);
+				if(r < 0 || bytessent == SOCKET_ERROR || do_exit) {
+					fprintf(stderr, "worker socket bye\n");
+                                        fflush(stderr);
 					pthread_exit(NULL);
 				}
 			}
@@ -336,8 +337,8 @@ static void *command_worker(void *arg)
 				left -= received;
 			}
 			if(received == SOCKET_ERROR || do_exit) {
-				printf("comm recv bye\n");
-				sighandler(0);
+				fprintf(stderr, "comm recv bye\n");
+                                fflush(stderr);
 				pthread_exit(NULL);
 			}
 		}
@@ -398,10 +399,12 @@ static void *command_worker(void *arg)
 			break;
                 case 0x0e:
                         if (cmd.param) {
-                                printf("start streaming i/q samples\n");
+                                fprintf(stderr, "start streaming i/q samples\n");
+                                fflush(stderr);
                                 wait_for_start = 0;
                         } else {
-                                printf("stop streaming i/q samples\n");
+                                fprintf(stderr, "stop streaming i/q samples\n");
+                                fflush(stderr);
                                 wait_for_start = 1;
                         }
                         break;
@@ -447,6 +450,14 @@ int main(int argc, char **argv)
 #endif
 	int num_cons;
         uint32_t test_mode = 0;
+
+#ifndef _WIN32
+        /* redirect stderr to a file if it's not a terminal */
+        if (! isatty(fileno(stderr))) {
+                /* change the file name below to something useful when debuggin */
+                freopen("/dev/null", "a", stderr);
+        }
+#endif
 
 	while ((opt = getopt(argc, argv, "a:p:f:g:s:b:B:n:d:P:t")) != -1) {
 		switch (opt) {
@@ -516,6 +527,7 @@ int main(int argc, char **argv)
 		} else {
 			fprintf(stderr, "Failed to open rtlsdr device %d:%d.\n", dev_index >> 16, (dev_index >> 8) & 0xff);
 		}
+                fflush(stderr);
 		exit(1);
 	}
 
@@ -537,26 +549,36 @@ int main(int argc, char **argv)
 
 	/* Set the sample rate */
 	r = rtlsdr_set_sample_rate(dev, samp_rate);
+	if (r < 0) {
 	if (r < 0)
 		fprintf(stderr, "WARNING: Failed to set sample rate.\n");
+                fflush(stderr);
+        }
 
 	/* Set the frequency */
 	r = rtlsdr_set_center_freq(dev, frequency);
-	if (r < 0)
+	if (r < 0) {
 		fprintf(stderr, "WARNING: Failed to set center freq.\n");
-	else
+                fflush(stderr);
+	} else {
 		fprintf(stderr, "Tuned to %i Hz.\n", frequency);
+                fflush(stderr);
+        }
 
 	if (0 == gain) {
 		/* Enable automatic gain */
 		r = rtlsdr_set_tuner_gain_mode(dev, 0);
-		if (r < 0)
+		if (r < 0) {
 			fprintf(stderr, "WARNING: Failed to enable automatic gain.\n");
+                        fflush(stderr);
+                }
 	} else {
 		/* Enable manual gain */
 		r = rtlsdr_set_tuner_gain_mode(dev, 1);
-		if (r < 0)
+		if (r < 0) {
 			fprintf(stderr, "WARNING: Failed to enable manual gain.\n");
+                        fflush(stderr);
+                }
 
 		/* Set the tuner gain */
 		r = rtlsdr_set_tuner_gain(dev, gain);
@@ -564,14 +586,17 @@ int main(int argc, char **argv)
 			fprintf(stderr, "WARNING: Failed to set tuner gain.\n");
 		else
 			fprintf(stderr, "Tuner gain set to %f dB.\n", gain/10.0);
+                fflush(stderr);
 	}
 
         rtlsdr_set_testmode(dev, test_mode);
 
 	/* Reset endpoint before we start reading from it (mandatory) */
 	r = rtlsdr_reset_buffer(dev);
-	if (r < 0)
+	if (r < 0) {
 		fprintf(stderr, "WARNING: Failed to reset buffers.\n");
+                fflush(stderr);
+        }
 
 	pthread_mutex_init(&exit_cond_lock, NULL);
 	pthread_mutex_init(&ll_mutex, NULL);
@@ -584,6 +609,7 @@ int main(int argc, char **argv)
 		listensocket = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
 		if (listensocket < 0) {
 			fprintf(stderr, "Error opening unix domain socket.\n");
+                        fflush(stderr);
 			exit(2);
 		}
 	} else {
@@ -608,6 +634,7 @@ int main(int argc, char **argv)
 		strncpy(local_u.sun_path, sock_path, sizeof(local_u.sun_path) - 1);
 		if (bind(listensocket, (struct sockaddr *) &local_u, sizeof(local_u)) < 0) {
 			fprintf(stderr, "Error binding to unix domain socket at %s\n", sock_path);
+                        fflush(stderr);
 			exit(3);
 		}
 	} else {
@@ -715,6 +742,8 @@ int main(int argc, char **argv)
 	}
 
  out:
+        fprintf(stderr, "Closing rtlsdr device.\n");
+        fflush(stderr);
 	rtlsdr_close(dev);
 	closesocket(listensocket);
 	closesocket(s[0]);
