@@ -102,6 +102,30 @@ static int llbuf_num = 500;
 static volatile int do_exit = 0;
 static int usb_buffer_size = 0;
 
+/* parameter cache; some rtlsdr_set_XXX methods don't have a corresponding
+   rtlsdr_get_XXX, so we cache successful values here.
+*/
+
+static
+uint32_t p_gain_mode = 0,
+        p_if_gain[6],
+        p_test_mode = 0,
+        p_agc_mode = 0,
+        p_rtl_xtal,
+        p_tuner_xtal,
+        p_tuner_gain_index,
+        p_streaming = 0;
+
+char * tuner_types[] = {
+	"unknown",
+	"E4000",
+	"FC0012",
+	"FC0013",
+	"FC2580",
+	"R820T",
+	"R828D"
+};
+
 void usage(void)
 {
 	printf("rtl_tcp, an I/Q spectrum server for RTL2832 based DVB-T receivers\n\n"
@@ -326,6 +350,8 @@ static void *command_worker(void *arg)
 	struct timeval tv= {1, 0};
 	int r = 0;
 	uint32_t tmp;
+#define REPLY_BUFF_SIZE 1024
+        char rbuf[REPLY_BUFF_SIZE + 1];
 
 	while(1) {
 		left=sizeof(cmd);
@@ -359,6 +385,7 @@ static void *command_worker(void *arg)
 		case 0x03:
 			printf("set gain mode %d\n", ntohl(cmd.param));
 			rtlsdr_set_tuner_gain_mode(dev, ntohl(cmd.param));
+                        p_gain_mode = ntohl(cmd.param);
 			break;
 		case 0x04:
 			printf("set gain %d\n", ntohl(cmd.param));
@@ -372,14 +399,18 @@ static void *command_worker(void *arg)
 			tmp = ntohl(cmd.param);
 			printf("set if stage %d gain %d\n", tmp >> 16, (short)(tmp & 0xffff));
 			rtlsdr_set_tuner_if_gain(dev, tmp >> 16, (short)(tmp & 0xffff));
+                        if (tmp >> 16 < 6)
+                                p_if_gain[tmp >> 16] = (tmp & 0xffff);
 			break;
 		case 0x07:
 			printf("set test mode %d\n", ntohl(cmd.param));
 			rtlsdr_set_testmode(dev, ntohl(cmd.param));
+                        p_test_mode = ntohl(cmd.param);
 			break;
 		case 0x08:
 			printf("set agc mode %d\n", ntohl(cmd.param));
 			rtlsdr_set_agc_mode(dev, ntohl(cmd.param));
+                        p_agc_mode = ntohl(cmd.param);
 			break;
 		case 0x09:
 			printf("set direct sampling %d\n", ntohl(cmd.param));
@@ -392,6 +423,7 @@ static void *command_worker(void *arg)
 		case 0x0b:
 			printf("set rtl xtal %d\n", ntohl(cmd.param));
 			rtlsdr_set_xtal_freq(dev, ntohl(cmd.param), 0);
+                        p_rtl_xtal = ntohl(cmd.param);
 			break;
 		case 0x0c:
 			printf("set tuner xtal %d\n", ntohl(cmd.param));
@@ -400,22 +432,73 @@ static void *command_worker(void *arg)
 		case 0x0d:
 			printf("set tuner gain by index %d\n", ntohl(cmd.param));
 			set_gain_by_index(dev, ntohl(cmd.param));
+                        p_tuner_gain_index = ntohl(cmd.param);
 			break;
                 case 0x0e:
                         if (cmd.param) {
                                 fprintf(stderr, "start streaming i/q samples\n");
                                 fflush(stderr);
                                 wait_for_start = 0;
+                                p_streaming = 1;
                         } else {
                                 fprintf(stderr, "stop streaming i/q samples\n");
                                 fflush(stderr);
                                 wait_for_start = 1;
+                                p_streaming = 0;
                         }
                         break;
 		default:
 			printf("unknown command %d param %d\n", cmd.cmd, ntohl(cmd.param));
 			break;
 		}
+                rtlsdr_get_xtal_freq(dev, &p_rtl_xtal, &p_tuner_xtal);
+                sprintf(rbuf, "{\
+\"frequency\": %d,\
+\"rate\": %d,\
+\"gain_mode\": %d,\
+\"tuner_gain\": %d,\
+\"freq_correction\": %d,\
+\"if_gain1\": %d,\
+\"if_gain2\": %d,\
+\"if_gain3\": %d,\
+\"if_gain4\": %d,\
+\"if_gain5\": %d,\
+\"if_gain6\": %d,\
+\"test_mode\": %d,\
+\"agc_mode\": %d,\
+\"direct_sampling\": %d,\
+\"offset_tuning\": %d,\
+\"rtl_xtal\": %d,\
+\"tuner_xtal\": %d,\
+\"tuner_type\": \"%s\",\
+\"tuner_gain_index\": %d,\
+\"num_tuner_gain_indexes\": %d,\
+\"streaming\": %d\
+}\n",
+
+                        rtlsdr_get_center_freq(dev),
+                        rtlsdr_get_sample_rate(dev),
+                        p_gain_mode,
+                        rtlsdr_get_tuner_gain(dev),
+                        rtlsdr_get_freq_correction(dev),
+                        p_if_gain[0],
+                        p_if_gain[1],
+                        p_if_gain[2],
+                        p_if_gain[3],
+                        p_if_gain[4],
+                        p_if_gain[5],
+                        p_test_mode,
+                        p_agc_mode,
+                        rtlsdr_get_direct_sampling(dev),
+                        rtlsdr_get_offset_tuning(dev),
+                        p_rtl_xtal,
+                        p_tuner_xtal,
+                        tuner_types[rtlsdr_get_tuner_type(dev)],
+                        p_tuner_gain_index,
+                        rtlsdr_get_tuner_gains(dev, 0),
+                        p_streaming);
+                send(s[0], rbuf, strlen(rbuf), 0);
+
 		cmd.cmd = 0xff;
 	}
 }
@@ -507,6 +590,7 @@ int main(int argc, char **argv)
 			break;
                 case 't':
                         test_mode = 1;
+                        p_test_mode = test_mode;
                         break;
 		default:
 			usage();
