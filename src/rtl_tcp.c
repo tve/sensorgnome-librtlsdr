@@ -102,6 +102,9 @@ static int llbuf_num = 500;
 static volatile int do_exit = 0;
 static int usb_buffer_size = 0;
 
+static int * tuner_gains;
+static char tuner_gains_buf[1024];
+
 /* parameter cache; some rtlsdr_set_XXX methods don't have a corresponding
    rtlsdr_get_XXX, so we cache successful values here.
 */
@@ -320,12 +323,7 @@ static int set_gain_by_index(rtlsdr_dev_t *_dev, unsigned int index)
 	int count = rtlsdr_get_tuner_gains(_dev, NULL);
 
 	if (count > 0 && (unsigned int)count > index) {
-		gains = malloc(sizeof(int) * count);
-		count = rtlsdr_get_tuner_gains(_dev, gains);
-
-		res = rtlsdr_set_tuner_gain(_dev, gains[index]);
-
-		free(gains);
+		res = rtlsdr_set_tuner_gain(_dev, tuner_gains[index]);
 	}
 
 	return res;
@@ -350,7 +348,7 @@ static void *command_worker(void *arg)
 	struct timeval tv= {1, 0};
 	int r = 0;
 	uint32_t tmp;
-#define REPLY_BUFF_SIZE 1024
+#define REPLY_BUFF_SIZE 1400
         char rbuf[REPLY_BUFF_SIZE + 1];
 
 	while(1) {
@@ -452,6 +450,7 @@ static void *command_worker(void *arg)
 			break;
 		}
                 rtlsdr_get_xtal_freq(dev, &p_rtl_xtal, &p_tuner_xtal);
+
                 sprintf(rbuf, "{\
 \"frequency\": %d,\
 \"rate\": %d,\
@@ -472,7 +471,7 @@ static void *command_worker(void *arg)
 \"tuner_xtal\": %d,\
 \"tuner_type\": \"%s\",\
 \"tuner_gain_index\": %d,\
-\"num_tuner_gain_indexes\": %d,\
+\"tuner_gain_values\": [%s],\
 \"streaming\": %d\
 }\n",
 
@@ -495,7 +494,7 @@ static void *command_worker(void *arg)
                         p_tuner_xtal,
                         tuner_types[rtlsdr_get_tuner_type(dev)],
                         p_tuner_gain_index,
-                        rtlsdr_get_tuner_gains(dev, 0),
+                        tuner_gains_buf,
                         p_streaming);
                 send(s[0], rbuf, strlen(rbuf), 0);
 
@@ -776,9 +775,19 @@ int main(int argc, char **argv)
 						dongle_info.tuner_type = htonl(r);
 
 					r = rtlsdr_get_tuner_gains(dev, NULL);
-					if (r >= 0)
+					if (r >= 0) {
+                                                int j, k;
+                                                char *tgb = & tuner_gains_buf[0];
 						dongle_info.tuner_gain_count = htonl(r);
-
+                                                tuner_gains = malloc(r * sizeof(int));
+                                                rtlsdr_get_tuner_gains(dev, tuner_gains);
+                                                /* format this array into tuner_gains_buf */
+                                                tuner_gains_buf[0] = '\0';
+                                                for (j = 0; j < r; ++j) {
+                                                        sprintf(tgb, "%c%.1f%n", (j > 0) ? ',' : ' ', tuner_gains[j] / 10.0, & k);
+                                                        tgb += k;
+                                                };
+                                        }
 					r = send(s[0], (const char *)&dongle_info, sizeof(dongle_info), 0);
 					if (sizeof(dongle_info) != r)
 						printf("failed to send dongle information\n");
