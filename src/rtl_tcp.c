@@ -68,6 +68,8 @@ static pthread_mutex_t exit_cond_lock;
 static pthread_mutex_t ll_mutex;
 static pthread_cond_t cond;
 
+static pthread_condattr_t cond_attr; // for setting CLOCK_MONOTONIC
+
 struct llist {
 	char *data;
 	size_t len;
@@ -260,7 +262,6 @@ static void *tcp_worker(void *arg)
 	struct llist *curelem,*prev;
 	int bytesleft,bytessent, index;
 	struct timeval tv= {1,0};
-	struct timeval tp;
 	struct timespec ts;
 	fd_set writefds;
 	int r = 0;
@@ -270,9 +271,8 @@ static void *tcp_worker(void *arg)
 			pthread_exit(0);
 
 		pthread_mutex_lock(&ll_mutex);
-		gettimeofday(&tp, NULL);
-		ts.tv_sec  = tp.tv_sec+5;
-		ts.tv_nsec = tp.tv_usec * 1000;
+		clock_gettime(CLOCK_MONOTONIC, &ts);
+                ts.tv_sec += 5; // timeout in 5 seconds
 		r = pthread_cond_timedwait(&cond, &ll_mutex, &ts);
 		if(r == ETIMEDOUT && ! wait_for_start) {
 			pthread_mutex_unlock(&ll_mutex);
@@ -605,7 +605,7 @@ int main(int argc, char **argv)
 	}
 
 	if (dev_index < 0) {
-		exit(1);
+		exit(2);
 	}
 
 	rtlsdr_open(&dev, (uint32_t)dev_index);
@@ -616,7 +616,7 @@ int main(int argc, char **argv)
 			fprintf(stderr, "Failed to open rtlsdr device %d:%d.\n", dev_index >> 16, (dev_index >> 8) & 0xff);
 		}
                 fflush(stderr);
-		exit(1);
+		exit(3);
 	}
 
 #ifndef _WIN32
@@ -689,7 +689,9 @@ int main(int argc, char **argv)
 	pthread_mutex_init(&exit_cond_lock, NULL);
 	pthread_mutex_init(&ll_mutex, NULL);
 	pthread_mutex_init(&exit_cond_lock, NULL);
-	pthread_cond_init(&cond, NULL);
+        pthread_condattr_init(&cond_attr);
+        pthread_condattr_setclock(&cond_attr, CLOCK_MONOTONIC);
+	pthread_cond_init(&cond, &cond_attr);
 	pthread_cond_init(&exit_cond, NULL);
 
 #ifndef _WIN32
@@ -698,7 +700,7 @@ int main(int argc, char **argv)
 		if (listensocket < 0) {
 			fprintf(stderr, "Error opening unix domain socket.\n");
                         fflush(stderr);
-			exit(2);
+			exit(4);
 		}
 	} else {
 #endif
@@ -723,7 +725,7 @@ int main(int argc, char **argv)
 		if (bind(listensocket, (struct sockaddr *) &local_u, sizeof(local_u)) < 0) {
 			fprintf(stderr, "Error binding to unix domain socket at %s\n", sock_path);
                         fflush(stderr);
-			exit(3);
+			exit(5);
 		}
 	} else {
 #endif
