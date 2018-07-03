@@ -97,6 +97,7 @@ typedef struct { /* structure size must be multiple of 2 bytes */
 static rtlsdr_dev_t *dev = NULL;
 static uint32_t samp_rate = 2048000;
 
+static int enable_biastee = 0;
 static int global_numq = 0;
 static struct llist *ll_buffers = 0;
 static int llbuf_num = 500;
@@ -144,7 +145,8 @@ void usage(void)
 		"\t[-n max number of linked list buffers to keep (default: 500)]\n"
 		"\t[-d device index (default: 0)]\n"
                 "\t[-t test mode: send RTL2832 internal counter, not real samples]\n"
-		"\t[-P ppm_error (default: 0)]\n");
+		"\t[-T enable bias-T on GPIO PIN 0 (works for rtl-sdr.com v3 dongles)]\n"
+                "\t[-P ppm_error (default: 0)]\n");
 	exit(1);
 }
 
@@ -432,7 +434,11 @@ static void *command_worker(void *arg)
 			set_gain_by_index(dev, ntohl(cmd.param));
                         p_tuner_gain_index = ntohl(cmd.param);
 			break;
-                case 0x0e:
+		case 0x0e:
+			printf("set bias tee %d\n", ntohl(cmd.param));
+			rtlsdr_set_bias_tee(dev, (int)ntohl(cmd.param));
+			break;
+                case 0x60:
                         if (cmd.param) {
                                 fprintf(stderr, "start streaming i/q samples\n");
                                 fflush(stderr);
@@ -546,7 +552,7 @@ int main(int argc, char **argv)
         }
 #endif
 
-	while ((opt = getopt(argc, argv, "a:p:f:g:s:b:B:n:d:P:t")) != -1) {
+	while ((opt = getopt(argc, argv, "a:p:f:g:s:b:B:n:d:P:tT")) != -1) {
 		switch (opt) {
 		case 'd':
 			dev_index = verbose_device_search(optarg);
@@ -591,6 +597,9 @@ int main(int argc, char **argv)
                         test_mode = 1;
                         p_test_mode = test_mode;
                         break;
+		case 'T':
+			enable_biastee = 1;
+			break;
 		default:
 			usage();
 			break;
@@ -678,6 +687,9 @@ int main(int argc, char **argv)
 	}
 
         rtlsdr_set_testmode(dev, test_mode);
+	rtlsdr_set_bias_tee(dev, enable_biastee);
+	if (enable_biastee)
+		fprintf(stderr, "activated bias-T on GPIO PIN 0\n");
 
 	/* Reset endpoint before we start reading from it (mandatory) */
 	r = rtlsdr_reset_buffer(dev);
