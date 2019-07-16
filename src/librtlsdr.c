@@ -1657,6 +1657,9 @@ int rtlsdr_open(rtlsdr_dev_t **out_dev, uint32_t index)
 	return 0;
  err:
 	if (dev) {
+		if (dev->devh)
+			libusb_close(dev->devh);
+
 		if (dev->ctx)
 			libusb_exit(dev->ctx);
 
