@@ -34,8 +34,19 @@ doc/
 
 src/rtl_sdr
 src/rtl_tcp
+src/rtl_adsb
+src/rtl_eeprom
+src/rtl_fm
+src/rtl_power
+src/rtl_test
+src/convenience/.dirstamp
 
 CMakeCache.txt
 */CMakeFiles
 CMakeFiles
 *.cmake
+
+build-temp/
+packages/
+sensorgnome-dockcross
+compile
