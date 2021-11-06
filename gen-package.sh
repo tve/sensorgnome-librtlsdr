@@ -31,8 +31,10 @@ echo "Libtool finish"
 ./sensorgnome-dockcross -i $IMG \
     libtool --finish $CDESTDIR
 
+# Boilerplate package generation
 cp -r DEBIAN $DESTDIR
+sed -e "/^Version/s/:.*/: $(date +%Y.%j)/" -i $DESTDIR/DEBIAN/control # set version: YYYY.DDD
 mkdir -p packages
-dpkg-deb -v --build $DESTDIR packages/sensorgnome-librtlsdr.deb
-# dpkg-deb --contents packages/sensorgnome-librtlsdr.deb
-ls -lh packages/sensorgnome-librtlsdr.deb
+dpkg-deb --root-owner-group --build $DESTDIR packages
+# dpkg-deb --contents packages
+ls -lh packages
