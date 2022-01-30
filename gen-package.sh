@@ -5,7 +5,7 @@ mkdir $DESTDIR
 
 # create dockcross script
 echo "Generating dockercross script"
-IMG=tvoneicken/sensorgnome-dockcross:armv7-rpi-buster-main
+IMG=tvoneicken/sensorgnome-dockcross:armv7-rpi-bullseye-main
 docker run $IMG >sensorgnome-dockcross
 chmod +x sensorgnome-dockcross
 
