@@ -2,53 +2,13 @@ name: Build package
 
 on: [push]
 
-env:
-  # Upload to AWS uses OIDC for federated auth:
-  # https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services
-  S3_PATH: motus-builds/${{github.repository}}
-  S3_REGION: us-east-2
-  AWS_ROLE: arn:aws:iam::635201719205:role/Github-actions-motus
-
 permissions:
   id-token: write
   contents: write
 
 jobs:
-  build-all:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v2
-        with:
-          path: .
-
-      # use branch or tag name in S3 upload path
-      - run: echo GIT_REF=${{github.ref}} | sed -e 's;refs/[^/]*/;;' >>$GITHUB_ENV
-
-      - name: Generate .deb package
-        run: ./gen-package.sh
-        shell: bash
-      - run: ls -ls packages
-
-      # Upload github artifacts for debugging purposes
-      - uses: actions/upload-artifact@v2
-        with:
-          name: deb-packages
-          path: packages
-
-      - name: Configure AWS Credentials
-        # See https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services
-        uses: aws-actions/configure-aws-credentials@master
-        with:
-          role-to-assume: ${{env.AWS_ROLE}}
-          role-session-name: GithubActionsMotus
-          aws-region: ${{ env.S3_REGION }}
-
-      - name: Upload .debs to AWS S3 repo
-        run: |
-          aws s3 sync --acl public-read packages s3://${{env.S3_PATH}}/$GIT_REF/
-
-      - name: Create annotation with link to packages on S3
-        run: |
-          echo "https://${{env.S3_PATH}}/$GIT_REF/"
-          echo "::notice title=Packages::https://${{env.S3_PATH}}/$GIT_REF/"
+  build-deb:
+    uses: tve/sensorgnome-build/.github/workflows/generate-deb.yml@pimod
+    secrets:
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
