@@ -544,13 +544,13 @@ int main(int argc, char **argv)
 	int num_cons;
         uint32_t test_mode = 0;
 
-#ifndef _WIN32
-        /* redirect stderr to a file if it's not a terminal */
-        if (! isatty(fileno(stderr))) {
-                /* change the file name below to something useful when debuggin */
-                freopen("/dev/null", "a", stderr);
-        }
-#endif
+// #ifndef _WIN32
+//         /* redirect stderr to a file if it's not a terminal */
+//         if (! isatty(fileno(stderr))) {
+//                 /* change the file name below to something useful when debuggin */
+//                 freopen("/dev/null", "a", stderr);
+//         }
+// #endif
 
 	while ((opt = getopt(argc, argv, "a:p:f:g:s:b:B:n:d:P:tT")) != -1) {
 		switch (opt) {
