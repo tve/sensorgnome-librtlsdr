@@ -35,6 +35,6 @@ echo "Libtool finish"
 cp -r DEBIAN $DESTDIR
 sed -e "/^Version/s/:.*/: $(date +%Y.%j)/" -i $DESTDIR/DEBIAN/control # set version: YYYY.DDD
 mkdir -p packages
-dpkg-deb --root-owner-group --build $DESTDIR packages
+dpkg-deb --root-owner-group -Zgzip --build $DESTDIR packages
 # dpkg-deb --contents packages
 ls -lh packages
