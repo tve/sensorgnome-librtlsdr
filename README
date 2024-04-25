@@ -8,9 +8,6 @@ http://sdr.osmocom.org/trac/wiki/rtl-sdr
 This version is intended for use with sensorgnomes (https://sensorgnome.org)
 and the motus wildlife tracking system (https://motus.org)
 
-Planned Changes
-
-- stable device selection via USB BUS:DEV selectors
-  (stable against plugging / unplugging of other rtlsdr dongles)
-
-- option to use a unix domain socket with rtl_tcp
+Comments by TvE:
+- original fork dates back to 2018
+- cherry-picked relevant commits up to release 2.0.1 from osmocom/rtl-sdr upstream
