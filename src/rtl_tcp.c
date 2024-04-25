@@ -114,7 +114,7 @@ static char tuner_gains_buf[1024];
 
 static
 uint32_t p_gain_mode = 0,
-        p_if_gain[6],
+        p_if_gain[7],
         p_test_mode = 0,
         p_agc_mode = 0,
         p_rtl_xtal,
@@ -399,7 +399,7 @@ static void *command_worker(void *arg)
 			tmp = ntohl(cmd.param);
 			printf("set if stage %d gain %d\n", tmp >> 16, (short)(tmp & 0xffff));
 			rtlsdr_set_tuner_if_gain(dev, tmp >> 16, (short)(tmp & 0xffff));
-                        if (tmp >> 16 < 6)
+                        if (tmp >> 16 < 7)
                                 p_if_gain[tmp >> 16] = (tmp & 0xffff);
 			break;
 		case 0x07:
@@ -486,12 +486,12 @@ static void *command_worker(void *arg)
                         p_gain_mode,
                         rtlsdr_get_tuner_gain(dev),
                         rtlsdr_get_freq_correction(dev),
-                        p_if_gain[0],
                         p_if_gain[1],
                         p_if_gain[2],
                         p_if_gain[3],
                         p_if_gain[4],
                         p_if_gain[5],
+                        p_if_gain[6],
                         p_test_mode,
                         p_agc_mode,
                         rtlsdr_get_direct_sampling(dev),
