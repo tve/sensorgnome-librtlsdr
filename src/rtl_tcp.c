@@ -120,6 +120,7 @@ uint32_t p_gain_mode = 0,
         p_rtl_xtal,
         p_tuner_xtal,
         p_tuner_gain_index,
+		p_bias_tee,
         p_streaming = 0;
 
 char * tuner_types[] = {
@@ -437,6 +438,7 @@ static void *command_worker(void *arg)
 		case 0x0e:
 			printf("set bias tee %d\n", ntohl(cmd.param));
 			rtlsdr_set_bias_tee(dev, (int)ntohl(cmd.param));
+			p_bias_tee = (int)ntohl(cmd.param);
 			break;
                 case 0x60:
                         if (cmd.param) {
@@ -478,6 +480,7 @@ static void *command_worker(void *arg)
 \"tuner_type\": \"%s\",\
 \"tuner_gain_index\": %d,\
 \"tuner_gain_values\": [%s],\
+\"bias_tee\": %d,\
 \"streaming\": %d\
 }\n",
 
@@ -690,6 +693,7 @@ int main(int argc, char **argv)
 	rtlsdr_set_bias_tee(dev, enable_biastee);
 	if (enable_biastee)
 		fprintf(stderr, "activated bias-T on GPIO PIN 0\n");
+	p_bias_tee = enable_biastee;
 
 	/* Reset endpoint before we start reading from it (mandatory) */
 	r = rtlsdr_reset_buffer(dev);
