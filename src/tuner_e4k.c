@@ -667,7 +667,7 @@ int e4k_set_lna_gain(struct e4k_state *e4k, int32_t gain)
 {
 	uint32_t i;
 	for(i = 0; i < ARRAY_SIZE(lnagain)/2; ++i) {
-		if(lnagain[i*2] == gain) {
+		if(lnagain[i*2] >= gain) {
 			e4k_reg_set_mask(e4k, E4K_REG_GAIN1, 0xf, lnagain[i*2+1]);
 			return gain;
 		}
